@@ -7,15 +7,7 @@ import numpy as np
 from utils import read_grayscale, ensure_output_dir, save_image
 
 
-def _denoise_median(gray: np.ndarray, out_dir: Path | None = None) -> np.ndarray:
-    denoised = cv2.medianBlur(gray, 5)
-    if out_dir is not None:
-        save_image(out_dir / "02_median.png", denoised)
-
-    return denoised
-
-
-def _remove_horizontal_periodic_noise_fft(img: np.ndarray, out_dir: Path | None = None) -> np.ndarray:
+def _remove_horizontal_periodic_noise_fft(img: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     f32 = img.astype(np.float32)
 
     # FFT and shift
@@ -41,11 +33,6 @@ def _remove_horizontal_periodic_noise_fft(img: np.ndarray, out_dir: Path | None 
     # Apply mask
     f_transform_shifted_filtered = f_transform_shifted * mask
 
-    # Save diagnostics
-    if out_dir is not None:
-        save_image(out_dir / "02a_fft_magnitude.png", magnitude_spectrum)
-        save_image(out_dir / "02b_fft_mask.png", mask)
-
     # Inverse shift and inverse FFT
     f_transform_filtered = np.fft.ifftshift(f_transform_shifted_filtered)
     img_filtered = np.fft.ifft2(f_transform_filtered)
@@ -54,82 +41,57 @@ def _remove_horizontal_periodic_noise_fft(img: np.ndarray, out_dir: Path | None 
     img_filtered = np.real(img_filtered)
     img_filtered = cv2.normalize(img_filtered, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
-    if out_dir is not None:
-        save_image(out_dir / "02c_fft_denoised.png", img_filtered)
-
-    return img_filtered
+    return img_filtered, magnitude_spectrum, mask
 
 
-def _normalize_contrast_clahe(img: np.ndarray, out_dir: Path | None = None) -> np.ndarray:
+def _normalize_contrast_clahe(img: np.ndarray) -> np.ndarray:
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    norm = clahe.apply(img)
-    if out_dir is not None:
-        save_image(out_dir / "03_clahe.png", norm)
-
-    return norm
+    return clahe.apply(img)
 
 
-def _threshold_otsu(norm: np.ndarray, out_dir: Path | None = None) -> tuple[np.ndarray, float]:
-    blur = cv2.GaussianBlur(norm, (5, 5), 0)
-    if out_dir is not None:
-        save_image(out_dir / "04_blur.png", blur)
-    _, th = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+def _threshold_otsu(norm: np.ndarray) -> tuple[np.ndarray, float]:
+    _, th = cv2.threshold(norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     fg_ratio = th.mean() / 255.0
     if fg_ratio > 0.5:
         th = cv2.bitwise_not(th)
-
-    if out_dir is not None:
-        save_image(out_dir / "05_thresh.png", th)
-
     return th, fg_ratio
 
 
-def _morphology_clean(th: np.ndarray, out_dir: Path | None = None) -> np.ndarray:
+def _morphology_clean(th: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     opened = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
-    if out_dir is not None:
-        save_image(out_dir / "06_open.png", opened)
     closed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1)
-    if out_dir is not None:
-        save_image(out_dir / "07_close.png", closed)
-
-    return closed
+    return closed, opened
 
 
-def _compute_markers(closed: np.ndarray, out_dir: Path | None = None) -> tuple[
+def _compute_markers(closed: np.ndarray, out_dir: Path) -> tuple[
     np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     sure_bg = cv2.dilate(closed, kernel, iterations=2)
-    if out_dir is not None:
-        save_image(out_dir / "08_sure_bg.png", sure_bg)
+    save_image(out_dir / "08_sure_bg.png", sure_bg)
     dist = cv2.distanceTransform(closed, cv2.DIST_L2, 5)
-    if out_dir is not None:
-        save_image(out_dir / "09_dist.png", dist)
+    save_image(out_dir / "09_dist.png", dist)
     dist_norm = cv2.normalize(dist, None, 0, 1.0, cv2.NORM_MINMAX)
     _, sure_fg = cv2.threshold(dist_norm, 0.4, 1.0, cv2.THRESH_BINARY)
     sure_fg = (sure_fg * 255).astype(np.uint8)
-    if out_dir is not None:
-        save_image(out_dir / "10_sure_fg.png", sure_fg)
+    save_image(out_dir / "10_sure_fg.png", sure_fg)
     unknown = cv2.subtract(sure_bg, sure_fg)
-    if out_dir is not None:
-        save_image(out_dir / "11_unknown.png", unknown)
+    save_image(out_dir / "11_unknown.png", unknown)
     _, markers = cv2.connectedComponents(sure_fg)
     markers = markers + 1
     markers[unknown == 255] = 0
-    if out_dir is not None:
-        markers_vis = markers.astype(np.float32)
-        save_image(out_dir / "12_markers.png", markers_vis)
+    markers_vis = markers.astype(np.float32)
+    save_image(out_dir / "12_markers.png", markers_vis)
     return sure_bg, sure_fg, unknown, markers
 
 
-def _apply_watershed(markers: np.ndarray, gray: np.ndarray, out_dir: Path | None = None) -> np.ndarray:
+def _apply_watershed(markers: np.ndarray, gray: np.ndarray, out_dir: Path) -> np.ndarray:
     color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     cv2.watershed(color, markers)
-    if out_dir is not None:
-        boundaries = (markers == -1)
-        overlay = color.copy()
-        overlay[boundaries] = (0, 0, 255)
-        cv2.imwrite(str(out_dir / "13_watershed_boundaries.png"), overlay)
+    boundaries = (markers == -1)
+    overlay = color.copy()
+    overlay[boundaries] = (0, 0, 255)
+    cv2.imwrite(str(out_dir / "13_watershed_boundaries.png"), overlay)
     return markers
 
 
@@ -146,30 +108,31 @@ def _count_components(labels: np.ndarray, min_area: int = 30) -> int:
     return count
 
 
-def count_rice_grains(img: np.ndarray, out_dir: Path | None = None) -> int:
-    if out_dir is not None:
-        save_image(out_dir / "01_init.png", img)
+def count_rice_grains(img: np.ndarray, out_dir: Path) -> int:
+    img = cv2.medianBlur(img, 5)
+    save_image(out_dir / "01_median.png", img)
 
-    # 1) Denoise
-    img = _denoise_median(img, out_dir)
+    img, magnitude_spectrum, fft_mask = _remove_horizontal_periodic_noise_fft(img)
+    save_image(out_dir / "02a_fft_magnitude.png", magnitude_spectrum)
+    save_image(out_dir / "02b_fft_mask.png", fft_mask)
+    save_image(out_dir / "02c_fft_denoised.png", img)
 
-    # 1b) Remove horizontal periodic noise via FFT notch filtering
-    img = _remove_horizontal_periodic_noise_fft(img, out_dir)
+    img = _normalize_contrast_clahe(img)
+    save_image(out_dir / "03_clahe.png", img)
 
-    # 2) Contrast normalization
-    img = _normalize_contrast_clahe(img, out_dir)
+    img = cv2.GaussianBlur(img, (5, 5), 0)
+    save_image(out_dir / "04_blur.png", img)
 
-    # 3) Thresholding
-    img, fg_ratio = _threshold_otsu(img, out_dir)
+    img, fg_ratio = _threshold_otsu(img)
+    save_image(out_dir / "05_thresh.png", img)
 
-    # 4) Morphology cleanup
-    img = _morphology_clean(img, out_dir)
+    img, opened = _morphology_clean(img)
+    save_image(out_dir / "06_opened.png", opened)
+    save_image(out_dir / "07_closed.png", img)
 
-    # 5) Markers and watershed
     _, _, _, markers = _compute_markers(img, out_dir)
     labels = _apply_watershed(markers, img, out_dir)
 
-    # 6) Count components
     count = _count_components(labels, min_area=30)
     return count
 
