@@ -101,27 +101,61 @@ def _count_components(labels: np.ndarray, min_area: int = 30) -> int:
     return count
 
 
-def count_rice_grains(img: np.ndarray, out_dir: Path) -> int:
+def count_rice_grains(img: np.ndarray, out_dir: Path, visualize: bool = False) -> int:
+    if visualize:
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        # Increase resolution of visualizations: higher DPI and slightly larger figure size
+        # Keep titles readable as grid grows
+        mpl.rcParams.update({
+            "figure.figsize": (14, 9),
+            "figure.dpi": 160,
+            "savefig.dpi": 160,
+            "axes.titlesize": 9,
+            "axes.titlepad": 6,
+        })
+
+    panels: list[tuple[str, np.ndarray]] = []
+
+    save_image(out_dir / "00_origin.png", img)
+    if visualize:
+        panels.append(("00 Origin", img))
+
     img = cv2.medianBlur(img, 5)
-    save_image(out_dir / "01_median.png", img)
+    save_image(out_dir / "01_median_blur.png", img)
+    if visualize:
+        panels.append(("01 Median blur", img))
 
     img, magnitude_spectrum, fft_mask = _remove_horizontal_periodic_noise_fft(img)
     save_image(out_dir / "02a_fft_magnitude.png", magnitude_spectrum)
     save_image(out_dir / "02b_fft_mask.png", fft_mask)
     save_image(out_dir / "02c_fft_denoised.png", img)
+    if visualize:
+        panels.append(("02a FFT magnitude", magnitude_spectrum))
+        panels.append(("02b FFT mask", (fft_mask * 255).astype(np.uint8)))
+        panels.append(("02c FFT denoised", img))
 
     img = _normalize_contrast_clahe(img)
     save_image(out_dir / "03_clahe.png", img)
+    if visualize:
+        panels.append(("03 CLAHE", img))
 
     img = cv2.GaussianBlur(img, (5, 5), 0)
-    save_image(out_dir / "04_blur.png", img)
+    save_image(out_dir / "04_gaussian_blur.png", img)
+    if visualize:
+        panels.append(("04 Gaussian blur", img))
 
     img = _threshold_otsu(img)
     save_image(out_dir / "05_threshold_otsu.png", img)
+    if visualize:
+        panels.append(("05 Otsu threshold", img))
 
     img, opened = _morphology_clean(img)
     save_image(out_dir / "06a_morphology_clean_opened.png", opened)
     save_image(out_dir / "06b_morphology_clean_closed.png", img)
+    if visualize:
+        panels.append(("06a Morph opened", opened))
+        panels.append(("06b Morph closed", img))
 
     sure_bg, dist, sure_fg, unknown, markers = _compute_markers(img)
     save_image(out_dir / "07a_compute_markers_sure_bg.png", sure_bg)
@@ -129,23 +163,58 @@ def count_rice_grains(img: np.ndarray, out_dir: Path) -> int:
     save_image(out_dir / "07c_compute_markers_sure_fg.png", sure_fg)
     save_image(out_dir / "07d_compute_markers_unknown.png", unknown)
     save_image(out_dir / "07e_compute_markers_markers.png", markers.astype(np.float32))
+    if visualize:
+        panels.append(("07a Sure BG", sure_bg))
+        panels.append(("07b Distance", dist))
+        panels.append(("07c Sure FG", sure_fg))
+        panels.append(("07d Unknown", unknown))
+        panels.append(("07e Markers", markers.astype(np.float32)))
 
     labels, overlay = _apply_watershed(markers, img)
     save_image(out_dir / "08_watershed_boundaries.png", overlay)
+    if visualize:
+        panels.append(("08 Watershed", cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)))
 
     count = _count_components(labels, min_area=30)
+
+    if visualize:
+        # Create a grid figure with up to 4 columns
+        n = len(panels)
+        cols = 4
+        rows = (n + cols - 1) // cols
+        fig, axes = plt.subplots(rows, cols, squeeze=False)
+        for i in range(rows * cols):
+            r, c = divmod(i, cols)
+            ax = axes[r][c]
+            if i < n:
+                title, im = panels[i]
+                if im.ndim == 2:
+                    # choose colormap based on data range
+                    if im.dtype == np.uint8:
+                        ax.imshow(im, cmap="gray", vmin=0, vmax=255)
+                    else:
+                        ax.imshow(im, cmap="magma")
+                else:
+                    ax.imshow(im)
+                ax.set_title(title)
+            ax.axis("off")
+        fig.suptitle(f"Rice grain counting pipeline (count={count})", fontsize=11)
+        fig.tight_layout()
+        plt.show()
+
     return count
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("Usage: python -m p1.main <image_path>")
+    if not (2 <= len(argv) <= 3):
+        print("Usage: python -m p1.main <image_path> [--show]")
         return 1
     image_path = argv[1]
+    visualize = len(argv) == 3 and argv[2] == "--show"
     try:
         img = read_grayscale(image_path)
         out_dir = ensure_output_dir(image_path)
-        count = count_rice_grains(img, out_dir)
+        count = count_rice_grains(img, out_dir, visualize=visualize)
         print(count)
         return 0
     except Exception as e:
