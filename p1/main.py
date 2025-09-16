@@ -49,12 +49,12 @@ def _normalize_contrast_clahe(img: np.ndarray) -> np.ndarray:
     return clahe.apply(img)
 
 
-def _threshold_otsu(norm: np.ndarray) -> tuple[np.ndarray, float]:
+def _threshold_otsu(norm: np.ndarray) -> np.ndarray:
     _, th = cv2.threshold(norm, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     fg_ratio = th.mean() / 255.0
     if fg_ratio > 0.5:
         th = cv2.bitwise_not(th)
-    return th, fg_ratio
+    return th
 
 
 def _morphology_clean(th: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -64,35 +64,28 @@ def _morphology_clean(th: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return closed, opened
 
 
-def _compute_markers(closed: np.ndarray, out_dir: Path) -> tuple[
-    np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _compute_markers(closed: np.ndarray) -> tuple[
+    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     sure_bg = cv2.dilate(closed, kernel, iterations=2)
-    save_image(out_dir / "08_sure_bg.png", sure_bg)
     dist = cv2.distanceTransform(closed, cv2.DIST_L2, 5)
-    save_image(out_dir / "09_dist.png", dist)
     dist_norm = cv2.normalize(dist, None, 0, 1.0, cv2.NORM_MINMAX)
     _, sure_fg = cv2.threshold(dist_norm, 0.4, 1.0, cv2.THRESH_BINARY)
     sure_fg = (sure_fg * 255).astype(np.uint8)
-    save_image(out_dir / "10_sure_fg.png", sure_fg)
     unknown = cv2.subtract(sure_bg, sure_fg)
-    save_image(out_dir / "11_unknown.png", unknown)
     _, markers = cv2.connectedComponents(sure_fg)
     markers = markers + 1
     markers[unknown == 255] = 0
-    markers_vis = markers.astype(np.float32)
-    save_image(out_dir / "12_markers.png", markers_vis)
-    return sure_bg, sure_fg, unknown, markers
+    return sure_bg, dist, sure_fg, unknown, markers
 
 
-def _apply_watershed(markers: np.ndarray, gray: np.ndarray, out_dir: Path) -> np.ndarray:
+def _apply_watershed(markers: np.ndarray, gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
     cv2.watershed(color, markers)
     boundaries = (markers == -1)
     overlay = color.copy()
     overlay[boundaries] = (0, 0, 255)
-    cv2.imwrite(str(out_dir / "13_watershed_boundaries.png"), overlay)
-    return markers
+    return markers, overlay
 
 
 def _count_components(labels: np.ndarray, min_area: int = 30) -> int:
@@ -123,15 +116,22 @@ def count_rice_grains(img: np.ndarray, out_dir: Path) -> int:
     img = cv2.GaussianBlur(img, (5, 5), 0)
     save_image(out_dir / "04_blur.png", img)
 
-    img, fg_ratio = _threshold_otsu(img)
-    save_image(out_dir / "05_thresh.png", img)
+    img = _threshold_otsu(img)
+    save_image(out_dir / "05_threshold_otsu.png", img)
 
     img, opened = _morphology_clean(img)
-    save_image(out_dir / "06_opened.png", opened)
-    save_image(out_dir / "07_closed.png", img)
+    save_image(out_dir / "06a_morphology_clean_opened.png", opened)
+    save_image(out_dir / "06b_morphology_clean_closed.png", img)
 
-    _, _, _, markers = _compute_markers(img, out_dir)
-    labels = _apply_watershed(markers, img, out_dir)
+    sure_bg, dist, sure_fg, unknown, markers = _compute_markers(img)
+    save_image(out_dir / "07a_compute_markers_sure_bg.png", sure_bg)
+    save_image(out_dir / "07b_compute_markers_dist.png", dist)
+    save_image(out_dir / "07c_compute_markers_sure_fg.png", sure_fg)
+    save_image(out_dir / "07d_compute_markers_unknown.png", unknown)
+    save_image(out_dir / "07e_compute_markers_markers.png", markers.astype(np.float32))
+
+    labels, overlay = _apply_watershed(markers, img)
+    save_image(out_dir / "08_watershed_boundaries.png", overlay)
 
     count = _count_components(labels, min_area=30)
     return count
