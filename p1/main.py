@@ -189,11 +189,7 @@ def count_rice_grains(img: np.ndarray, out_dir: Path, visualize: bool = False) -
             if i < n:
                 title, im = panels[i]
                 if im.ndim == 2:
-                    # choose colormap based on data range
-                    if im.dtype == np.uint8:
-                        ax.imshow(im, cmap="gray", vmin=0, vmax=255)
-                    else:
-                        ax.imshow(im, cmap="magma")
+                    ax.imshow(im, cmap="gray", vmin=0, vmax=255)
                 else:
                     ax.imshow(im)
                 ax.set_title(title)
