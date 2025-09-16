@@ -64,8 +64,7 @@ def _morphology_clean(th: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return closed, opened
 
 
-def _compute_markers(closed: np.ndarray) -> tuple[
-    np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def _compute_markers(closed: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     sure_bg = cv2.dilate(closed, kernel, iterations=2)
     dist = cv2.distanceTransform(closed, cv2.DIST_L2, 5)
@@ -76,7 +75,7 @@ def _compute_markers(closed: np.ndarray) -> tuple[
     _, markers = cv2.connectedComponents(sure_fg)
     markers = markers + 1
     markers[unknown == 255] = 0
-    return sure_bg, dist, sure_fg, unknown, markers
+    return sure_bg, sure_fg, unknown, markers
 
 
 def _apply_watershed(markers: np.ndarray, gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -157,15 +156,13 @@ def count_rice_grains(img: np.ndarray, out_dir: Path, visualize: bool = False) -
         panels.append(("06a Morph opened", opened))
         panels.append(("06b Morph closed", img))
 
-    sure_bg, dist, sure_fg, unknown, markers = _compute_markers(img)
+    sure_bg, sure_fg, unknown, markers = _compute_markers(img)
     save_image(out_dir / "07a_compute_markers_sure_bg.png", sure_bg)
-    save_image(out_dir / "07b_compute_markers_dist.png", dist)
     save_image(out_dir / "07c_compute_markers_sure_fg.png", sure_fg)
     save_image(out_dir / "07d_compute_markers_unknown.png", unknown)
     save_image(out_dir / "07e_compute_markers_markers.png", markers.astype(np.float32))
     if visualize:
         panels.append(("07a Sure BG", sure_bg))
-        panels.append(("07b Distance", dist))
         panels.append(("07c Sure FG", sure_fg))
         panels.append(("07d Unknown", unknown))
         panels.append(("07e Markers", markers.astype(np.float32)))
