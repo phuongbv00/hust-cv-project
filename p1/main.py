@@ -1,10 +1,54 @@
+import shutil
 import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from utils import read_grayscale, ensure_output_dir, save_image
+
+def _read_grayscale(path: str) -> np.ndarray:
+    img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise FileNotFoundError(f"Cannot read image: {path}")
+    return img
+
+
+def _ensure_output_dir(input_path: str, recreate=True) -> Path:
+    project_root = Path(__file__).resolve().parent
+    out_root = project_root / "output"
+    try:
+        out_root.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to create output root {out_root}: {e}")
+    stem = Path(input_path).name
+    for ext in [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]:
+        if stem.lower().endswith(ext):
+            stem = stem[: -len(ext)]
+            break
+    out_dir = out_root / stem
+    try:
+        if recreate and out_dir.exists():
+            shutil.rmtree(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Failed to create output dir {out_dir}: {e}")
+    return out_dir
+
+
+def _save_image(path: Path, img: np.ndarray):
+    try:
+        if img.dtype != np.uint8:
+            imin, imax = float(np.min(img)), float(np.max(img))
+            if imax > imin:
+                norm = (img - imin) / (imax - imin)
+            else:
+                norm = np.zeros_like(img, dtype=np.float32)
+            img_to_save = (norm * 255).astype(np.uint8)
+        else:
+            img_to_save = img
+        cv2.imwrite(str(path), img_to_save)
+    except Exception as e:
+        print(f"Failed to save {path}: {e}")
 
 
 def _remove_horizontal_periodic_noise_fft(img: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -116,51 +160,51 @@ def count_rice_grains(img: np.ndarray, out_dir: Path, visualize: bool = False) -
 
     panels: list[tuple[str, np.ndarray]] = []
 
-    save_image(out_dir / "00_origin.png", img)
+    _save_image(out_dir / "00_origin.png", img)
     if visualize:
         panels.append(("00 Origin", img))
 
     img = cv2.medianBlur(img, 5)
-    save_image(out_dir / "01_median_blur.png", img)
+    _save_image(out_dir / "01_median_blur.png", img)
     if visualize:
         panels.append(("01 Median blur", img))
 
     img, magnitude_spectrum, fft_mask = _remove_horizontal_periodic_noise_fft(img)
-    save_image(out_dir / "02a_fft_magnitude.png", magnitude_spectrum)
-    save_image(out_dir / "02b_fft_mask.png", fft_mask)
-    save_image(out_dir / "02c_fft_denoised.png", img)
+    _save_image(out_dir / "02a_fft_magnitude.png", magnitude_spectrum)
+    _save_image(out_dir / "02b_fft_mask.png", fft_mask)
+    _save_image(out_dir / "02c_fft_denoised.png", img)
     if visualize:
         panels.append(("02a FFT magnitude", magnitude_spectrum))
         panels.append(("02b FFT mask", (fft_mask * 255).astype(np.uint8)))
         panels.append(("02c FFT denoised", img))
 
     img = _normalize_contrast_clahe(img)
-    save_image(out_dir / "03_clahe.png", img)
+    _save_image(out_dir / "03_clahe.png", img)
     if visualize:
         panels.append(("03 CLAHE", img))
 
     img = cv2.GaussianBlur(img, (5, 5), 0)
-    save_image(out_dir / "04_gaussian_blur.png", img)
+    _save_image(out_dir / "04_gaussian_blur.png", img)
     if visualize:
         panels.append(("04 Gaussian blur", img))
 
     img = _threshold_otsu(img)
-    save_image(out_dir / "05_threshold_otsu.png", img)
+    _save_image(out_dir / "05_threshold_otsu.png", img)
     if visualize:
         panels.append(("05 Otsu threshold", img))
 
     img, opened = _morphology_clean(img)
-    save_image(out_dir / "06a_morphology_clean_opened.png", opened)
-    save_image(out_dir / "06b_morphology_clean_closed.png", img)
+    _save_image(out_dir / "06a_morphology_clean_opened.png", opened)
+    _save_image(out_dir / "06b_morphology_clean_closed.png", img)
     if visualize:
         panels.append(("06a Morph opened", opened))
         panels.append(("06b Morph closed", img))
 
     sure_bg, sure_fg, unknown, markers = _compute_markers(img)
-    save_image(out_dir / "07a_compute_markers_sure_bg.png", sure_bg)
-    save_image(out_dir / "07c_compute_markers_sure_fg.png", sure_fg)
-    save_image(out_dir / "07d_compute_markers_unknown.png", unknown)
-    save_image(out_dir / "07e_compute_markers_markers.png", markers.astype(np.float32))
+    _save_image(out_dir / "07a_compute_markers_sure_bg.png", sure_bg)
+    _save_image(out_dir / "07c_compute_markers_sure_fg.png", sure_fg)
+    _save_image(out_dir / "07d_compute_markers_unknown.png", unknown)
+    _save_image(out_dir / "07e_compute_markers_markers.png", markers.astype(np.float32))
     if visualize:
         panels.append(("07a Sure BG", sure_bg))
         panels.append(("07c Sure FG", sure_fg))
@@ -168,7 +212,7 @@ def count_rice_grains(img: np.ndarray, out_dir: Path, visualize: bool = False) -
         panels.append(("07e Markers", markers.astype(np.float32)))
 
     labels, overlay = _apply_watershed(markers, img)
-    save_image(out_dir / "08_watershed_boundaries.png", overlay)
+    _save_image(out_dir / "08_watershed_boundaries.png", overlay)
     if visualize:
         panels.append(("08 Watershed", cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)))
 
@@ -205,8 +249,8 @@ def main(argv: list[str]) -> int:
     image_path = argv[1]
     visualize = len(argv) == 3 and argv[2] == "--show"
     try:
-        img = read_grayscale(image_path)
-        out_dir = ensure_output_dir(image_path)
+        img = _read_grayscale(image_path)
+        out_dir = _ensure_output_dir(image_path)
         count = count_rice_grains(img, out_dir, visualize=visualize)
         print(count)
         return 0
