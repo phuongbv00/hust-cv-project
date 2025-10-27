@@ -78,7 +78,7 @@ def _create_feature_extractor() -> Tuple[cv2.Feature2D, str, bool]:
     return orb, "ORB", True
 
 
-def _match_descriptors(desc1: np.ndarray, desc2: np.ndarray, binary: bool, ratio_thresh: float = 0.75):
+def _match_descriptors(desc1: np.ndarray, desc2: np.ndarray, binary: bool, lowe_ratio_threshold: float = 0.75):
     if desc1 is None or desc2 is None or len(desc1) == 0 or len(desc2) == 0:
         return []
     if binary:
@@ -96,7 +96,7 @@ def _match_descriptors(desc1: np.ndarray, desc2: np.ndarray, binary: bool, ratio
     knn = matcher.knnMatch(desc1, desc2, k=2)
     good = []
     for m, n in knn:
-        if m.distance < ratio_thresh * n.distance:
+        if m.distance < lowe_ratio_threshold * n.distance:
             good.append(m)
     return good
 
@@ -129,19 +129,6 @@ def _ensure_uint8(gray: np.ndarray) -> np.ndarray:
     return np.zeros_like(gray, dtype=np.uint8)
 
 
-def _clahe(gray: np.ndarray, clip_limit: float = 3.0, tile_grid_size: tuple[int, int] = (8, 8)) -> np.ndarray:
-    gray = _ensure_uint8(gray)
-    clahe = cv2.createCLAHE(clipLimit=clip_limit, tileGridSize=tile_grid_size)
-    return clahe.apply(gray)
-
-
-def _median_blur(gray: np.ndarray, ksize: int = 5) -> np.ndarray:
-    """
-    Deprecated: median blur removed from the pipeline. Returns input unchanged.
-    """
-    return gray
-
-
 def _resize_max_side(gray: np.ndarray, max_side: int) -> tuple[np.ndarray, float]:
     h, w = gray.shape[:2]
     scale = 1.0
@@ -157,8 +144,8 @@ def detect_object(template_gray: np.ndarray,
                   scene_gray: np.ndarray,
                   scene_bgr: np.ndarray,
                   out_dir: Path,
-                  ratio_thresh: float = 0.75,
-                  ransac_reproj_threshold: float = 4.0) -> dict:
+                  lowe_ratio_threshold: float = 0.7,
+                  ransac_reproj_threshold: float = 1.0) -> dict:
     feat, name, is_binary = _create_feature_extractor()
 
     # Step 1: Local feature extraction (assumes any preprocessing was done by caller)
@@ -173,7 +160,7 @@ def detect_object(template_gray: np.ndarray,
     _save(out_dir / "01_keypoints_scene.png", vis_s)
 
     # Step 2: Feature matching + ratio test
-    good = _match_descriptors(desc1, desc2, binary=is_binary, ratio_thresh=ratio_thresh)
+    good = _match_descriptors(desc1, desc2, binary=is_binary, lowe_ratio_threshold=lowe_ratio_threshold)
 
     # Visualize raw top matches (without ratio) for context if possible
     raw_matches_img = None
@@ -313,9 +300,8 @@ def main(argv: list[str]) -> int:
             _save(out_dir / "00_template.png", template_gray)
             _save(out_dir / "00_scene.png", scene_gray)
 
-            # Call detector on raw grayscale images (CLAHE removed)
             result = detect_object(template_gray, scene_gray, scene_bgr, out_dir,
-                                   ratio_thresh=0.85, ransac_reproj_threshold=3.0)
+                                   lowe_ratio_threshold=0.7, ransac_reproj_threshold=1.0)
             status = "DETECTED" if result.get("success") else "N/A"
             position = result.get('bbox') if result.get('success') and result.get('bbox') else None
             print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | feature={result.get('feature')} | "
