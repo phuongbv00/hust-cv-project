@@ -146,11 +146,12 @@ def _resize_max_side(gray: np.ndarray, max_side: int) -> tuple[np.ndarray, float
     h, w = gray.shape[:2]
     scale = 1.0
     if max(h, w) > max_side:
-      scale = max_side / float(max(h, w))
-      new_w = int(round(w * scale))
-      new_h = int(round(h * scale))
-      gray = cv2.resize(gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        scale = max_side / float(max(h, w))
+        new_w = int(round(w * scale))
+        new_h = int(round(h * scale))
+        gray = cv2.resize(gray, (new_w, new_h), interpolation=cv2.INTER_AREA)
     return gray, scale
+
 
 def detect_object(template_gray: np.ndarray,
                   scene_gray: np.ndarray,
@@ -238,7 +239,7 @@ def detect_object(template_gray: np.ndarray,
                                  flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
     _save(out_dir / "04_matches_inliers.png", inlier_img)
 
-    # Step 4: Localize object and draw axis-aligned bounding box if found (no polygon drawing)
+    # Step 4: Localize the object and draw bbox if found
     h_t, w_t = template_gray.shape[:2]
     corners = np.float32([[0, 0], [w_t - 1, 0], [w_t - 1, h_t - 1], [0, h_t - 1]]).reshape(-1, 1, 2)
     proj = cv2.perspectiveTransform(corners, H)
@@ -287,7 +288,6 @@ def main(argv: list[str]) -> int:
     template_path = argv[1]
     scene_paths = argv[2:]
 
-    # Clear ./p2/output before running this session
     try:
         out_root = Path(__file__).resolve().parent / "output"
         if out_root.exists():
@@ -303,7 +303,6 @@ def main(argv: list[str]) -> int:
         return 2
 
     processed = 0
-    any_failed = False
 
     for scene_path in scene_paths:
         try:
@@ -317,15 +316,14 @@ def main(argv: list[str]) -> int:
             # Call detector on raw grayscale images (CLAHE removed)
             result = detect_object(template_gray, scene_gray, scene_bgr, out_dir,
                                    ratio_thresh=0.85, ransac_reproj_threshold=3.0)
-            status = "FOUND" if result.get("success") else "NOT_FOUND"
+            status = "DETECTED" if result.get("success") else "N/A"
             position = result.get('bbox') if result.get('success') and result.get('bbox') else None
-            print(f"{Path(scene_path).name}: {status} | feature={result.get('feature')} | "
-                  f"kp1={result.get('num_kp_template')} kp2={result.get('num_kp_scene')} "
-                  f"matches={result.get('num_matches')} inliers={result.get('inliers')} "
+            print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | feature={result.get('feature')} | "
+                  f"kp1={result.get('num_kp_template')}, kp2={result.get('num_kp_scene')}, "
+                  f"matches={result.get('num_matches')}, inliers={result.get('inliers')}, "
                   f"position={position}")
             processed += 1
         except Exception as e:
-            any_failed = True
             print(f"Error processing scene '{scene_path}': {e}", file=sys.stderr)
             continue
 
