@@ -212,7 +212,7 @@ def detect_object(template_gray: np.ndarray,
         "num_matches": int(len(good)),
         "homography": None,
         "inliers": 0,
-        "corners": None,
+        "bbox": None,
         "success": False,
     }
 
@@ -238,21 +238,37 @@ def detect_object(template_gray: np.ndarray,
                                  flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
     _save(out_dir / "04_matches_inliers.png", inlier_img)
 
-    # Step 4: Localize object by projecting template corners
+    # Step 4: Localize object and draw axis-aligned bounding box if found (no polygon drawing)
     h_t, w_t = template_gray.shape[:2]
     corners = np.float32([[0, 0], [w_t - 1, 0], [w_t - 1, h_t - 1], [0, h_t - 1]]).reshape(-1, 1, 2)
     proj = cv2.perspectiveTransform(corners, H)
-    proj_int = np.int32(proj)
 
     # Success criterion
     min_inliers = _min_required_inliers(*scene_gray.shape[:2])
     if inliers >= min_inliers:
         result["success"] = True
-        result["corners"] = proj.reshape(4, 2).tolist()
 
     overlay = scene_bgr.copy()
-    cv2.polylines(overlay, [proj_int], isClosed=True, color=(0, 255, 0) if result["success"] else (0, 0, 255),
-                  thickness=3)
+
+    # If success, compute and draw AABB (bbox) over the projected quadrilateral
+    if result["success"]:
+        pts = proj.reshape(4, 2)
+        min_x = int(np.floor(np.min(pts[:, 0])))
+        max_x = int(np.ceil(np.max(pts[:, 0])))
+        min_y = int(np.floor(np.min(pts[:, 1])))
+        max_y = int(np.ceil(np.max(pts[:, 1])))
+        # Clamp to scene bounds
+        h_s, w_s = scene_gray.shape[:2]
+        min_x = max(0, min_x)
+        min_y = max(0, min_y)
+        max_x = min(w_s - 1, max_x)
+        max_y = min(h_s - 1, max_y)
+        x, y = min_x, min_y
+        w_box = max(0, max_x - min_x + 1)
+        h_box = max(0, max_y - min_y + 1)
+        result["bbox"] = [int(x), int(y), int(w_box), int(h_box)]
+        # Draw only the bbox (yellow)
+        cv2.rectangle(overlay, (x, y), (x + w_box, y + h_box), (0, 255, 255), thickness=3)
 
     # Put summary text
     txt = f"{name}: kp1={len(kps1)} kp2={len(kps2)} matches={len(good)} inliers={inliers}"
@@ -302,9 +318,11 @@ def main(argv: list[str]) -> int:
             result = detect_object(template_gray, scene_gray, scene_bgr, out_dir,
                                    ratio_thresh=0.85, ransac_reproj_threshold=3.0)
             status = "FOUND" if result.get("success") else "NOT_FOUND"
+            position = result.get('bbox') if result.get('success') and result.get('bbox') else None
             print(f"{Path(scene_path).name}: {status} | feature={result.get('feature')} | "
                   f"kp1={result.get('num_kp_template')} kp2={result.get('num_kp_scene')} "
-                  f"matches={result.get('num_matches')} inliers={result.get('inliers')}")
+                  f"matches={result.get('num_matches')} inliers={result.get('inliers')} "
+                  f"position={position}")
             processed += 1
         except Exception as e:
             any_failed = True
