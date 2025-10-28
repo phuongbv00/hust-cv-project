@@ -1,10 +1,10 @@
 import argparse
+import concurrent.futures
 import csv
 import itertools
+import threading
 from pathlib import Path
 from typing import List, Tuple
-import concurrent.futures
-import threading
 
 import cv2
 import numpy as np
@@ -48,8 +48,8 @@ def compute_metrics(tp: int, fp: int, tn: int, fn: int) -> dict:
 
 def run_eval(
     template_path: Path,
-    pos_dir: Path,
-    neg_dir: Path,
+    pos_dir: List[Path],
+    neg_dirs: List[Path],
     out_root: Path,
     lowe_values: List[float],
     ransac_values: List[float],
@@ -57,10 +57,16 @@ def run_eval(
     # Load template once
     template_gray = _read_image_grayscale(str(template_path))
 
-    pos_images = list_images(pos_dir)
-    neg_images = list_images(neg_dir)
+    pos_images: List[Path] = []
+    neg_images: List[Path] = []
+    for nd in pos_dir:
+        pos_images.extend(list_images(nd))
+    for nd in neg_dirs:
+        neg_images.extend(list_images(nd))
     if len(pos_images) == 0 and len(neg_images) == 0:
-        raise FileNotFoundError(f"No images found under {pos_dir} and {neg_dir}")
+        raise FileNotFoundError(
+            f"No images found under positives: {[str(p) for p in pos_dir]} and negatives: {[str(p) for p in neg_dirs]}"
+        )
 
     out_root.mkdir(parents=True, exist_ok=True)
 
@@ -201,20 +207,27 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--template",
         type=Path,
-        default=Path(__file__).resolve().parent / "data" / "template" / "mini.jpg",
-        help="Path to template image (default: p2/data/template/mini.jpg)",
+        default=Path(__file__).resolve().parent / "data" / "template.jpg",
+        help="Path to template image (default: p2/data/template.jpg)",
     )
     parser.add_argument(
-        "--scene-mini",
+        "--scene-positives",
         type=Path,
-        default=Path(__file__).resolve().parent / "data" / "scene" / "mini",
+        nargs="+",
+        default=[
+            Path(__file__).resolve().parent / "data" / "scene" / "positives",
+            Path(__file__).resolve().parent / "data" / "scene" / "positives_augmented",
+        ],
         help="Directory of positive scene images containing the mini logo",
     )
     parser.add_argument(
-        "--scene-others",
+        "--scene-negatives",
         type=Path,
-        default=Path(__file__).resolve().parent / "data" / "scene" / "others",
-        help="Directory of negative scene images without the mini logo",
+        nargs="+",
+        default=[
+            Path(__file__).resolve().parent / "data" / "scene" / "negatives",
+        ],
+        help="One or more directories of negative scene images without the mini logo (default: negatives and negatives_augmented)",
     )
     parser.add_argument(
         "--lowe",
@@ -248,8 +261,8 @@ def main(argv: List[str] | None = None) -> int:
 
     results, out_dir = run_eval(
         template_path=args.template,
-        pos_dir=args.scene_mini,
-        neg_dir=args.scene_others,
+        pos_dir=list(args.scene_positives),
+        neg_dirs=list(args.scene_negatives),
         out_root=args.out,
         lowe_values=lowe_values,
         ransac_values=ransac_values,

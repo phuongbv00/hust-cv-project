@@ -1,35 +1,30 @@
 import os
+from pathlib import Path
 
 if __name__ == '__main__':
-    base_dir = './input'
-    tmpl_dir = os.path.join(base_dir, 'template')
-    scene_dir = os.path.join(base_dir, 'scene')
+    base_dir = Path(__file__).resolve().parent / 'data'
+    tmpl_path = base_dir / 'template.jpg'
+    scene_mini_dir = base_dir / 'scene' / 'positives'
+    scene_others_dir = base_dir / 'scene' / 'negatives'
 
-    if not os.path.isdir(tmpl_dir) or not os.path.isdir(scene_dir):
-        print('Please organize images under ./input/template and ./input/scene (both directories should exist).')
+    if not tmpl_path.is_file() or not scene_mini_dir.is_dir() or not scene_others_dir.is_dir():
+        print(
+            'Please organize images under p2/data/template.jpg and p2/data/scene/{positives,negatives} (template.jpg and both directories should exist).')
     else:
-        templates = []
         scenes = []
+        exts = ('.png', '.jpg', '.jpeg', '.bmp')
 
-        for (_, _, files) in os.walk(tmpl_dir):
-            for file in files:
-                if file.lower().endswith('.png') or file.lower().endswith('.jpg'):
-                    templates.append(file)
-            break
+        # Collect scenes from both positives and negatives
+        for dir_path in (scene_mini_dir, scene_others_dir):
+            for (_, _, files) in os.walk(dir_path):
+                for file in files:
+                    if file.lower().endswith(exts):
+                        scenes.append(str(dir_path / file))
+                        break
 
-        for (_, _, files) in os.walk(scene_dir):
-            for file in files:
-                if file.lower().endswith('.png') or file.lower().endswith('.jpg'):
-                    scenes.append(file)
-            break
-
-        if len(templates) == 0:
-            print('No template .png files found in ./input/template')
-        elif len(scenes) == 0:
-            print('No scene .png files found in ./input/scene')
+        if len(scenes) == 0:
+            print('No scene image files found in p2/data/scene/{positives,negatives}')
         else:
-            scenes_args = ' '.join(os.path.join(scene_dir, s) for s in scenes)
-            for template in templates:
-                tmpl_path = os.path.join(tmpl_dir, template)
-                cmd = f"python -m p2.main {tmpl_path} {scenes_args}"
-                os.system(cmd)
+            scenes_args = ' '.join(scenes)
+            cmd = f"python -m p2.main {tmpl_path} {scenes_args}"
+            os.system(cmd)

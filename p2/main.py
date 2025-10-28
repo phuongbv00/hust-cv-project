@@ -108,16 +108,6 @@ def _detect_and_compute(feat: cv2.Feature2D, gray: np.ndarray):
     return kps, desc
 
 
-def _min_required_inliers(h: int, w: int) -> int:
-    # Require more inliers for larger scenes; baseline 10
-    area = h * w
-    if area < 640 * 480:
-        return 8
-    elif area < 1280 * 720:
-        return 12
-    return 15
-
-
 def _ensure_uint8(gray: np.ndarray) -> np.ndarray:
     if gray is None:
         return gray
@@ -145,7 +135,9 @@ def detect_object(template_gray: np.ndarray,
                   scene_bgr: np.ndarray,
                   out_dir: Path,
                   lowe_ratio_threshold: float = 0.7,
-                  ransac_reproj_threshold: float = 1.0) -> dict:
+                  ransac_reproj_threshold: float = 1.0,
+                  min_inliers_abs=4,
+                  inlier_ratio_threshold: float = 0.25) -> dict:
     feat, name, is_binary = _create_feature_extractor()
 
     # Step 1: Local feature extraction (assumes any preprocessing was done by caller)
@@ -232,7 +224,7 @@ def detect_object(template_gray: np.ndarray,
     proj = cv2.perspectiveTransform(corners, H)
 
     # Success criterion
-    min_inliers = _min_required_inliers(*scene_gray.shape[:2])
+    min_inliers = max(min_inliers_abs, int(inlier_ratio_threshold * len(good)))
     if inliers >= min_inliers:
         result["success"] = True
 
@@ -276,14 +268,6 @@ def main(argv: list[str]) -> int:
     scene_paths = argv[2:]
 
     try:
-        out_root = Path(__file__).resolve().parent / "output"
-        if out_root.exists():
-            shutil.rmtree(out_root)
-            print('Cleared p2/output directory before run.')
-    except Exception as e:
-        print(f'Warning: failed to clear {out_root}: {e}')
-
-    try:
         template_gray = _read_image_grayscale(template_path)
     except Exception as e:
         print(f"Error loading template '{template_path}': {e}", file=sys.stderr)
@@ -301,7 +285,7 @@ def main(argv: list[str]) -> int:
             _save(out_dir / "00_scene.png", scene_gray)
 
             result = detect_object(template_gray, scene_gray, scene_bgr, out_dir,
-                                   lowe_ratio_threshold=0.7, ransac_reproj_threshold=1.0)
+                                   lowe_ratio_threshold=0.85, ransac_reproj_threshold=3.0)
             status = "DETECTED" if result.get("success") else "N/A"
             position = result.get('bbox') if result.get('success') and result.get('bbox') else None
             print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | feature={result.get('feature')} | "
