@@ -13,6 +13,17 @@ uv sync
 
 ## Project 1: Rice grains counting
 
+### Prepare the dataset
+
+```sh
+curl -L -o ./p1/data.zip\
+  https://www.kaggle.com/api/v1/datasets/download/phuongbv00/rice-grains-counting-samples
+```
+
+```sh
+unzip ./p1/data.zip -d ./p1/
+```
+
 ### Run the program
 
 ```sh
