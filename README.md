@@ -7,20 +7,57 @@
 
 ## Quick start
 
-```
+```sh
 uv sync
 ```
 
-## Project 1: Grain Counting
+## Project 1: Rice grains counting
 
 ### Run the program
 
-```
-python -m p1.main p1/input/1_wIXlvBeAFtNVgJd49VObgQ.png
+```sh
+python -m p1.main <image_path>
 ```
 
-### Run the batch test
+### Run the sample test
 
-```
+```sh
 python -m p1.test
+```
+
+## Project 2: Object detection using local features
+
+### Prepare the dataset
+
+```sh
+curl -L -o ./p2/data.zip\
+  https://www.kaggle.com/api/v1/datasets/download/phuongbv00/flickr-logos-27-augmented-for-mini-detection
+```
+
+```sh
+unzip ./p2/data.zip -d ./p2/
+```
+
+#### Generate augmented images (optional)
+
+```sh
+python -m p2.augment
+`````
+
+### Run the program
+
+```sh
+python -m p2.main <template_image> <scene_image1> [scene_image2 ...]
+```
+
+### Run the sample test
+
+```sh
+python -m p2.test
+```
+
+### Run the evaluation
+
+```sh
+python -m p2.evaluate
 ```

@@ -135,7 +135,7 @@ def detect_object(template_gray: np.ndarray,
                   scene_bgr: np.ndarray,
                   out_dir: Path,
                   lowe_ratio_threshold: float = 0.7,
-                  ransac_reproj_threshold: float = 1.0,
+                  ransac_reproj_threshold: float = 3.0,
                   min_inliers_abs=4,
                   inlier_ratio_threshold: float = 0.25) -> dict:
     feat, name, is_binary = _create_feature_extractor()
@@ -284,8 +284,7 @@ def main(argv: list[str]) -> int:
             _save(out_dir / "00_template.png", template_gray)
             _save(out_dir / "00_scene.png", scene_gray)
 
-            result = detect_object(template_gray, scene_gray, scene_bgr, out_dir,
-                                   lowe_ratio_threshold=0.85, ransac_reproj_threshold=3.0)
+            result = detect_object(template_gray, scene_gray, scene_bgr, out_dir)
             status = "DETECTED" if result.get("success") else "N/A"
             position = result.get('bbox') if result.get('success') and result.get('bbox') else None
             print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | feature={result.get('feature')} | "
