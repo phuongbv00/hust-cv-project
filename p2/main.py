@@ -203,15 +203,15 @@ def detect_object(template_gray: np.ndarray,
                                  flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
     _save(out_dir / "04_matches_inliers.png", inlier_img)
 
-    # Step 4: Localize the object and draw bbox if found
-    h_t, w_t = template_gray.shape[:2]
-    corners = np.float32([[0, 0], [w_t - 1, 0], [w_t - 1, h_t - 1], [0, h_t - 1]]).reshape(-1, 1, 2)
-    proj = cv2.perspectiveTransform(corners, H)
-
     # Success criterion
     min_inliers = max(min_inliers_abs, int(inlier_ratio_threshold * len(good)))
     if inliers >= min_inliers:
         result["success"] = True
+
+    # Step 4: Localize the object and draw bbox if found
+    h_t, w_t = template_gray.shape[:2]
+    corners = np.float32([[0, 0], [w_t - 1, 0], [w_t - 1, h_t - 1], [0, h_t - 1]]).reshape(-1, 1, 2)
+    proj = cv2.perspectiveTransform(corners, H)
 
     overlay = scene_bgr.copy()
 
