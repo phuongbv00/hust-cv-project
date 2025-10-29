@@ -1,7 +1,6 @@
 import shutil
 import sys
 from pathlib import Path
-from typing import Tuple
 
 import cv2
 import numpy as np
@@ -56,12 +55,7 @@ def _save(path: Path, img: np.ndarray) -> None:
         print(f"Failed to save {path}: {e}")
 
 
-def _create_feature_extractor() -> Tuple[cv2.Feature2D, str, bool]:
-    """
-    Returns:
-        detector_descriptor, name, is_binary_descriptor
-    """
-    # Prefer SIFT (float descriptors) with tuned parameters for logo-like data
+def _create_feature_extractor() -> cv2.Feature2D:
     if hasattr(cv2, 'SIFT_create'):
         try:
             sift = cv2.SIFT_create(
@@ -70,29 +64,26 @@ def _create_feature_extractor() -> Tuple[cv2.Feature2D, str, bool]:
                 edgeThreshold=10,
                 sigma=1.2,
             )
-            return sift, "SIFT", False
-        except Exception:
-            pass
-    # Fallback to ORB (binary descriptors)
-    orb = cv2.ORB_create(nfeatures=3000)
-    return orb, "ORB", True
+            return sift
+        except Exception as e:
+            raise RuntimeError(f"Failed to create SIFT feature extractor: {e}")
+    raise RuntimeError(
+        "SIFT is required but not available in this OpenCV build."
+    )
 
 
-def _match_descriptors(desc1: np.ndarray, desc2: np.ndarray, binary: bool, lowe_ratio_threshold: float = 0.75):
+def _match_descriptors(desc1: np.ndarray, desc2: np.ndarray, lowe_ratio_threshold: float = 0.75):
     if desc1 is None or desc2 is None or len(desc1) == 0 or len(desc2) == 0:
         return []
-    if binary:
-        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
-    else:
-        # FLANN for float descriptors
-        index_params = dict(algorithm=1, trees=5)  # KDTree
-        search_params = dict(checks=50)
-        matcher = cv2.FlannBasedMatcher(index_params, search_params)
-        # FLANN requires float32
-        if desc1.dtype != np.float32:
-            desc1 = desc1.astype(np.float32)
-        if desc2.dtype != np.float32:
-            desc2 = desc2.astype(np.float32)
+    # FLANN for float descriptors (SIFT)
+    index_params = dict(algorithm=1, trees=5)  # KDTree
+    search_params = dict(checks=50)
+    matcher = cv2.FlannBasedMatcher(index_params, search_params)
+    # FLANN requires float32
+    if desc1.dtype != np.float32:
+        desc1 = desc1.astype(np.float32)
+    if desc2.dtype != np.float32:
+        desc2 = desc2.astype(np.float32)
     knn = matcher.knnMatch(desc1, desc2, k=2)
     good = []
     for m, n in knn:
@@ -138,7 +129,7 @@ def detect_object(template_gray: np.ndarray,
                   ransac_reproj_threshold: float = 3.0,
                   min_inliers_abs=4,
                   inlier_ratio_threshold: float = 0.25) -> dict:
-    feat, name, is_binary = _create_feature_extractor()
+    feat = _create_feature_extractor()
 
     # Step 1: Local feature extraction (assumes any preprocessing was done by caller)
     kps1, desc1 = _detect_and_compute(feat, template_gray)
@@ -152,26 +143,21 @@ def detect_object(template_gray: np.ndarray,
     _save(out_dir / "01_keypoints_scene.png", vis_s)
 
     # Step 2: Feature matching + ratio test
-    good = _match_descriptors(desc1, desc2, binary=is_binary, lowe_ratio_threshold=lowe_ratio_threshold)
+    good = _match_descriptors(desc1, desc2, lowe_ratio_threshold=lowe_ratio_threshold)
 
     # Visualize raw top matches (without ratio) for context if possible
     raw_matches_img = None
     try:
         if desc1 is not None and desc2 is not None and len(desc1) > 0 and len(desc2) > 0:
-            if is_binary:
-                bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-                raw = bf.match(desc1, desc2)
-                raw = sorted(raw, key=lambda m: m.distance)[:50]
-            else:
-                index_params = dict(algorithm=1, trees=5)
-                search_params = dict(checks=50)
-                flann = cv2.FlannBasedMatcher(index_params, search_params)
-                # ensure float32
-                d1 = desc1.astype(np.float32) if desc1.dtype != np.float32 else desc1
-                d2 = desc2.astype(np.float32) if desc2.dtype != np.float32 else desc2
-                raw_knn = flann.knnMatch(d1, d2, k=1)
-                raw = [m[0] for m in raw_knn]
-                raw = sorted(raw, key=lambda m: m.distance)[:50]
+            index_params = dict(algorithm=1, trees=5)
+            search_params = dict(checks=50)
+            flann = cv2.FlannBasedMatcher(index_params, search_params)
+            # ensure float32
+            d1 = desc1.astype(np.float32) if desc1.dtype != np.float32 else desc1
+            d2 = desc2.astype(np.float32) if desc2.dtype != np.float32 else desc2
+            raw_knn = flann.knnMatch(d1, d2, k=1)
+            raw = [m[0] for m in raw_knn]
+            raw = sorted(raw, key=lambda m: m.distance)[:50]
             raw_matches_img = cv2.drawMatches(template_gray, kps1, scene_gray, kps2, raw, None,
                                               flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
     except Exception:
@@ -186,7 +172,6 @@ def detect_object(template_gray: np.ndarray,
         _save(out_dir / "03_matches_ratio.png", matches_img)
 
     result = {
-        "feature": name,
         "num_kp_template": len(kps1),
         "num_kp_scene": len(kps2),
         "num_matches": int(len(good)),
@@ -251,7 +236,7 @@ def detect_object(template_gray: np.ndarray,
         cv2.rectangle(overlay, (x, y), (x + w_box, y + h_box), (0, 255, 255), thickness=3)
 
     # Put summary text
-    txt = f"{name}: kp1={len(kps1)} kp2={len(kps2)} matches={len(good)} inliers={inliers}"
+    txt = f"kp1={len(kps1)} kp2={len(kps2)} matches={len(good)} inliers={inliers}"
     cv2.putText(overlay, txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 255), 2, cv2.LINE_AA)
 
     _save(out_dir / "05_localization.png", overlay)
@@ -287,7 +272,7 @@ def main(argv: list[str]) -> int:
             result = detect_object(template_gray, scene_gray, scene_bgr, out_dir)
             status = "DETECTED" if result.get("success") else "N/A"
             position = result.get('bbox') if result.get('success') and result.get('bbox') else None
-            print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | feature={result.get('feature')} | "
+            print(f"{Path(template_path).name} ~ {Path(scene_path).name}: {status} | "
                   f"kp1={result.get('num_kp_template')}, kp2={result.get('num_kp_scene')}, "
                   f"matches={result.get('num_matches')}, inliers={result.get('inliers')}, "
                   f"position={position}")
