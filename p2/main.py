@@ -235,10 +235,6 @@ def detect_object(template_gray: np.ndarray,
         # Draw only the bbox (yellow)
         cv2.rectangle(overlay, (x, y), (x + w_box, y + h_box), (0, 255, 255), thickness=3)
 
-    # Put summary text
-    txt = f"kp1={len(kps1)} kp2={len(kps2)} matches={len(good)} inliers={inliers}"
-    cv2.putText(overlay, txt, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (50, 50, 255), 2, cv2.LINE_AA)
-
     _save(out_dir / "05_localization.png", overlay)
 
     return result

@@ -232,7 +232,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--lowe",
         type=str,
-        default="0.6,0.7,0.8,0.85,0.9",
+        default="0.6,0.7,0.8,0.9",
         help="Lowe ratio thresholds: comma list (e.g., 0.6,0.7,0.8) or range a:b:step (e.g., 0.6:0.9:0.05)",
     )
     parser.add_argument(
@@ -252,6 +252,18 @@ def main(argv: List[str] | None = None) -> int:
         type=Path,
         default=None,
         help="Optional path to save CSV of metrics (default: <out>/metrics.csv)",
+    )
+    parser.add_argument(
+        "--metric-decimals",
+        type=int,
+        default=4,
+        help="Number of decimal places for metrics (precision, recall, f1, accuracy). Default: 4",
+    )
+    parser.add_argument(
+        "--param-decimals",
+        type=int,
+        default=1,
+        help="Number of decimal places for parameter values (lowe, ransac) in outputs. Default: 1",
     )
 
     args = parser.parse_args(argv)
@@ -274,16 +286,38 @@ def main(argv: List[str] | None = None) -> int:
     # Print nice summary
     print("Evaluation Results (Precision, Recall, F1, Accuracy):")
     print("lowe\transac\ttp\tfp\ttn\tfn\tprec\trec\tf1\tacc")
+
+    pd = max(0, int(args.param_decimals))
+    md = max(0, int(args.metric_decimals))
+
     for row in results:
+        lowe_str = f"{row['lowe_ratio_threshold']:.{pd}f}"
+        ransac_str = f"{row['ransac_reproj_threshold']:.{pd}f}"
+        prec_str = f"{row['precision']:.{md}f}"
+        rec_str = f"{row['recall']:.{md}f}"
+        f1_str = f"{row['f1']:.{md}f}"
+        acc_str = f"{row['accuracy']:.{md}f}"
         print(
-            f"{row['lowe_ratio_threshold']:.2f}\t{row['ransac_reproj_threshold']:.2f}\t"
+            f"{lowe_str}\t{ransac_str}\t"
             f"{row['tp']}\t{row['fp']}\t{row['tn']}\t{row['fn']}\t"
-            f"{row['precision']:.4f}\t{row['recall']:.4f}\t{row['f1']:.4f}\t{row['accuracy']:.4f}"
+            f"{prec_str}\t{rec_str}\t{f1_str}\t{acc_str}"
         )
+
+    # Prepare rounded results for CSV output
+    rounded_results = []
+    for row in results:
+        r = dict(row)
+        r['lowe_ratio_threshold'] = round(float(r['lowe_ratio_threshold']), pd)
+        r['ransac_reproj_threshold'] = round(float(r['ransac_reproj_threshold']), pd)
+        r['precision'] = round(float(r['precision']), md)
+        r['recall'] = round(float(r['recall']), md)
+        r['f1'] = round(float(r['f1']), md)
+        r['accuracy'] = round(float(r['accuracy']), md)
+        rounded_results.append(r)
 
     csv_path = args.csv if args.csv is not None else (args.out / "metrics.csv")
     csv_path.parent.mkdir(parents=True, exist_ok=True)
-    save_csv(results, csv_path)
+    save_csv(rounded_results, csv_path)
     print(f"Saved CSV: {csv_path}")
 
     return 0
