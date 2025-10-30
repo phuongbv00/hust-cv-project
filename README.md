@@ -27,13 +27,13 @@ unzip ./p1/data.zip -d ./p1/
 ### Run the program
 
 ```sh
-python -m p1.main <image_path>
+uv run python -m p1.main <image_path>
 ```
 
 ### Run the sample test
 
 ```sh
-python -m p1.test
+uv run python -m p1.test
 ```
 
 ## Project 2: Object detection using local features
@@ -52,23 +52,23 @@ unzip ./p2/data.zip -d ./p2/
 #### Generate augmented images (optional)
 
 ```sh
-python -m p2.augment
+uv run python -m p2.augment
 `````
 
 ### Run the program
 
 ```sh
-python -m p2.main <template_image> <scene_image1> [scene_image2 ...]
+uv run python -m p2.main <template_image> <scene_image1> [scene_image2 ...]
 ```
 
 ### Run the sample test
 
 ```sh
-python -m p2.test
+uv run python -m p2.test
 ```
 
 ### Run the evaluation
 
 ```sh
-python -m p2.evaluate
+uv run python -m p2.evaluate
 ```
